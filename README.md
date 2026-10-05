@@ -29,17 +29,24 @@ already uses it for goto.)
 
 ## Using it
 
-The menu has five entries:
+The menu has seven entries:
 
+- **toggle**: pick a codespace (the list shows each one's state) to start it if it's stopped or stop it if it's
+  running.
 - **add**: pick a codespace and register it with herdr. If the codespace is stopped, it gets started (this takes about a
   minute). herdr may ask to install itself on the codespace. Say yes. The machine is labeled with the codespace name
   minus the random suffix, so `obscure-parakeet-pv45jwpqvghrv6g` becomes `obscure-parakeet`.
 - **refresh**: the same as add. Use it to start a codespace you stopped, or after a rebuild changes its host key.
 - **remove**: take a codespace out of herdr. The codespace itself isn't touched.
+- **start**: start a stopped codespace through the GitHub API, wait until it's available, then wait for an open herdr
+  client to reconnect to it.
 - **stop**: shut a codespace down.
 - **list**: all your codespaces, and which ones are in herdr.
 
-Everything also works from a terminal: `bin/herdr-codespaces add|refresh|remove|stop [name] [label]`, `list`, or `menu`.
+The menu runs on the herdr server you have selected, so open it while Local is selected.
+
+Everything also works from a terminal: `bin/herdr-codespaces add|refresh|remove|start|stop [name] [label]`, `toggle`,
+`list`, or `menu`.
 
 ## Not paying for idle codespaces
 
@@ -48,7 +55,8 @@ you forget about never hits its idle timeout. herdr also reconnects on its own, 
 right back up after you stopped it.
 
 The plugin handles the second problem for you. Its ssh config checks the codespace's state before connecting and
-refuses if the codespace isn't already running. So a stopped codespace stays stopped until you add or refresh it.
+refuses if the codespace isn't already running. So a stopped codespace stays stopped until you start, add, or refresh
+it.
 
 For the first problem, turn on autostop (macOS only):
 

@@ -166,6 +166,43 @@ cmd_stop() {
 
 state() { gh codespace view -c "$1" --json state -q .state < /dev/null 2>/dev/null || echo unknown; }
 
+cmd_start() {
+  local name=${1:-} id="" label="" i
+  [[ -n $name ]] || name=$(pick "start which codespace?") || exit 1
+  [[ $name =~ ^[A-Za-z0-9-]+$ ]] || die "invalid codespace name: $name"
+  echo "==> starting $name (takes about a minute)"
+  gh api -X POST "/user/codespaces/$name/start" > /dev/null
+  for (( i = 0; i < 60; i++ )); do
+    [[ $(state "$name") == Available ]] && break
+    sleep 5
+  done
+  [[ $(state "$name") == Available ]] || die "$name did not become available; check gh codespace list"
+  IFS=$'\t' read -r id label < <(machines | machine_for "$name") || true
+  if [[ -n $id ]]; then
+    echo "==> waiting for herdr machine '$label' to reconnect (up to 2 minutes)"
+    for (( i = 0; i < 30; i++ )); do
+      "$H" machine status "$id" < /dev/null > /dev/null 2>&1 && { echo "started $name; '$label' is connected"; return; }
+      sleep 5
+    done
+    echo "started $name; herdr hasn't reconnected '$label' yet, an open herdr client will within 2 minutes"
+    return
+  fi
+  echo "started $name"
+}
+
+cmd_toggle() {
+  local rows row name repo s
+  rows=$(codespaces)
+  [[ -n $rows ]] || die "no codespaces (gh codespace list)"
+  row=$(choose "start/stop which codespace?" <<<"$rows") || exit 1
+  IFS=$'\t' read -r name repo s _ <<<"$row"
+  case $s in
+    Available) echo "==> stopping $name"; cmd_stop "$name" ;;
+    Shutdown) cmd_start "$name" ;;
+    *) die "$name is $s; try again once it settles" ;;
+  esac
+}
+
 # ProxyCommand wrapper: only connect to a running codespace, unless HERDR_CS_WAKE is set (add/refresh)
 cmd_guard() {
   local name=$1; shift
@@ -226,7 +263,7 @@ PL
 
 cmd_menu() {
   local c
-  c=$(printf '%s\n' add refresh remove stop list | choose "codespaces") || exit 0
+  c=$(printf '%s\n' toggle add refresh remove start stop list | choose "codespaces") || exit 0
   "cmd_${c/refresh/add}"
 }
 
@@ -236,11 +273,13 @@ main() {
     list) cmd_list ;;
     remove) shift; cmd_remove "$@" ;;
     stop) shift; cmd_stop "$@" ;;
+    start) shift; cmd_start "$@" ;;
+    toggle) cmd_toggle ;;
     guard) shift; cmd_guard "$@" ;;
     idle-stop) shift; cmd_idle_stop "$@" ;;
     autostop) shift; cmd_autostop "$@" ;;
     menu) trap 'echo; read -rsn1 -p "press any key to close" || true' EXIT; cmd_menu ;;
-    *) echo "usage: herdr-codespaces add|refresh|remove|stop [name] [label] | list | menu | autostop on [min]|off"; exit 2 ;;
+    *) echo "usage: herdr-codespaces add|refresh|remove|start|stop [name] [label] | toggle | list | menu | autostop on [min]|off"; exit 2 ;;
   esac
 }
 
