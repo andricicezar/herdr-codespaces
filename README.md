@@ -58,15 +58,19 @@ The plugin handles the second problem for you. Its ssh config checks the codespa
 refuses if the codespace isn't already running. So a stopped codespace stays stopped until you start, add, or refresh
 it.
 
-For the first problem, turn on autostop (macOS only):
+For the first problem, turn on autostop (macOS, WSL, or Linux on X11 with `xprintidle`):
 
 ```sh
 bin/herdr-codespaces autostop on        # or: autostop on 120
 ```
 
-That installs a launchd job that runs every five minutes. Once your Mac has had no keyboard or mouse input for an
+That installs a job that runs every five minutes. Once your computer has had no keyboard or mouse input for an
 hour, it stops every registered codespace, except ones where an agent is still working. `autostop off` removes it.
-It logs what it stopped to `~/Library/Logs/herdr-codespaces.log`.
+
+- **macOS**: a launchd job. It logs what it stopped to `~/Library/Logs/herdr-codespaces.log`.
+- **Linux**: a systemd user timer, `herdr-codespaces-autostop.timer`. It logs to
+  `journalctl --user -u herdr-codespaces-autostop`. Under WSL the input comes from Windows, so idle time is read
+  through `powershell.exe`; elsewhere it uses `xprintidle`.
 
 A spending limit in your GitHub billing settings is a good backstop either way.
 
@@ -88,7 +92,7 @@ Worth knowing before you install it:
     The block loads the git token and moves you into the repo.
   - If Claude Code is set up there, add offers to install herdr's Claude integration, which lets herdr resume Claude
     sessions after a restart. If it's already installed, you won't be asked.
-- **launchd** gets one job, but only if you turn on autostop.
+- **launchd** (macOS) or **systemd** (Linux) gets one job, but only if you turn on autostop.
 
 ## Tests
 

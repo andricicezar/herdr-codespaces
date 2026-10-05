@@ -213,12 +213,44 @@ cmd_guard() {
   exec "$@"
 }
 
-# stop registered codespaces once the Mac has had no keyboard/mouse input for N minutes,
+WIN_IDLE_PS='$ProgressPreference = "SilentlyContinue"
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public static class HerdrCsIdle {
+  [StructLayout(LayoutKind.Sequential)] struct LastInput { public uint Size; public uint Time; }
+  [DllImport("user32.dll")] static extern bool GetLastInputInfo(ref LastInput info);
+  public static uint Seconds() {
+    var info = new LastInput { Size = 8 };
+    GetLastInputInfo(ref info);
+    return unchecked((uint)Environment.TickCount - info.Time) / 1000;
+  }
+}
+"@
+[HerdrCsIdle]::Seconds()'
+
+idle_seconds() {
+  case $(uname -s) in
+    Darwin) ioreg -c IOHIDSystem | awk '/HIDIdleTime/ && !d {print int($NF/1e9); d=1}' ;;
+    Linux)
+      if grep -qi microsoft /proc/version 2>/dev/null && command -v powershell.exe > /dev/null; then
+        powershell.exe -NoProfile -NonInteractive -EncodedCommand \
+          "$(printf %s "$WIN_IDLE_PS" | iconv -f utf-8 -t utf-16le | base64 -w0)" < /dev/null 2>/dev/null | tr -d '\r'
+      elif command -v xprintidle > /dev/null; then
+        echo $(( $(xprintidle) / 1000 ))
+      else
+        die "no idle time source: install xprintidle (X11) or run under WSL"
+      fi ;;
+    *) die "idle detection is not supported on $(uname -s)" ;;
+  esac
+}
+
+# stop registered codespaces once there has been no keyboard/mouse input for N minutes,
 # skipping any codespace with a working agent
-# ponytail: macOS-only idle source (ioreg HIDIdleTime); add xprintidle etc. if linux matters
 cmd_idle_stop() {
   local limit=$(( ${1:-60} * 60 )) idle label name
-  idle=$(ioreg -c IOHIDSystem | awk '/HIDIdleTime/ && !d {print int($NF/1e9); d=1}')
+  idle=$(idle_seconds)
+  [[ $idle =~ ^[0-9]+$ ]] || die "could not read idle time: '$idle'"
   (( idle >= limit )) || return 0
   while IFS=$'\t' read -r label name; do
     [[ $(state "$name") == Available ]] || continue
@@ -230,8 +262,67 @@ cmd_idle_stop() {
 
 PLIST="$HOME/Library/LaunchAgents/dev.herdr.codespaces.autostop.plist"
 
-# install/remove a launchd job that runs idle-stop every 5 minutes
 cmd_autostop() {
+  case $(uname -s) in
+    Darwin) autostop_launchd "$@" ;;
+    Linux) autostop_systemd "$@" ;;
+    *) die "autostop is not supported on $(uname -s)" ;;
+  esac
+}
+
+UNIT_DIR="$HOME/.config/systemd/user"
+UNIT=herdr-codespaces-autostop
+
+autostop_systemd() {
+  if [[ -f $UNIT_DIR/$UNIT.timer ]]; then
+    systemctl --user disable --now "$UNIT.timer" 2>/dev/null || true
+  fi
+  case ${1:-} in
+    off)
+      rm -f "$UNIT_DIR/$UNIT.service" "$UNIT_DIR/$UNIT.timer"
+      systemctl --user daemon-reload
+      echo "autostop off" ;;
+    on)
+      local mins=${2:-60} herdr path display=""
+      [[ $mins =~ ^[0-9]+$ ]] || die "minutes must be a number"
+      herdr=$(command -v "$H") || die "herdr not found"
+      path="$(dirname "$(command -v gh)"):$(dirname "$herdr")"
+      if command -v powershell.exe > /dev/null; then path+=":$(dirname "$(command -v powershell.exe)")"; fi
+      path+=":/usr/local/bin:/usr/bin:/bin"
+      [[ -n ${DISPLAY:-} ]] && display="Environment=\"DISPLAY=$DISPLAY\""
+      idle_seconds > /dev/null
+      mkdir -p "$UNIT_DIR"
+      cat > "$UNIT_DIR/$UNIT.service" <<UNIT
+[Unit]
+Description=Stop GitHub Codespaces registered in herdr after ${mins}m without keyboard/mouse input
+
+[Service]
+Type=oneshot
+Environment="PATH=$path"
+Environment="HERDR_BIN_PATH=$herdr"
+$display
+ExecStart="$SELF" idle-stop $mins
+UNIT
+      cat > "$UNIT_DIR/$UNIT.timer" <<UNIT
+[Unit]
+Description=Check every 5 minutes for idle GitHub Codespaces registered in herdr
+
+[Timer]
+OnStartupSec=5min
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target
+UNIT
+      systemctl --user daemon-reload
+      systemctl --user enable --now "$UNIT.timer"
+      echo "autostop on: stops idle codespaces after ${mins}m of no input (log: journalctl --user -u $UNIT)" ;;
+    *) die "usage: autostop on [minutes] | off" ;;
+  esac
+}
+
+# install/remove a launchd job that runs idle-stop every 5 minutes
+autostop_launchd() {
   launchctl bootout "gui/$(id -u)" "$PLIST" 2>/dev/null || true
   case ${1:-} in
     off) rm -f "$PLIST"; echo "autostop off" ;;
