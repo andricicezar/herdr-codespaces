@@ -200,13 +200,13 @@ cmd_start() {
   done
   [[ $(state "$name") == Available ]] || die "$name did not become available; check gh codespace list"
   IFS=$'\t' read -r id label < <(machines | machine_for "$name") || true
-  if [[ -n $id ]]; then
-    echo "==> reconnecting herdr machine '$label'"
-    reconnect_clients "$id" && { echo "started $name; '$label' is reachable, open herdr clients reconnect now"; return; }
+  if [[ -z $id ]]; then echo "started $name"; return; fi
+  echo "==> reconnecting herdr machine '$label'"
+  if reconnect_clients "$id"; then
+    echo "started $name; open herdr clients reconnect to '$label' now"
+  else
     echo "started $name; herdr can't reach '$label' yet, open clients keep retrying"
-    return
   fi
-  echo "started $name"
 }
 
 cmd_toggle() {
@@ -225,7 +225,7 @@ cmd_guard() {
   local name=$1; shift
   if [[ -z ${HERDR_CS_WAKE:-} ]]; then
     local s; s=$(state "$name")
-    [[ $s == Available ]] || { echo "herdr-codespaces: $name is $s; not waking it (use refresh)" >&2; exit 1; }
+    [[ $s == Available ]] || { echo "herdr-codespaces: $name is $s; not waking it (use start or refresh)" >&2; exit 1; }
   fi
   exec "$@"
 }
