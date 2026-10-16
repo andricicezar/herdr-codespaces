@@ -120,7 +120,8 @@ cmd_add() {
   remote_bashrc "$alias"
 
   if [[ -n $id ]]; then
-    echo "==> already registered as herdr machine '$old_label'"
+    echo "==> already registered as herdr machine '$old_label'; reconnecting open herdr clients"
+    reconnect_clients "$id" || echo "warning: herdr can't reach '$old_label' yet; clients keep retrying"
   else
     echo "==> herdr machine add --label $label $alias"
     "$H" machine add --label "$label" "$alias"   # interactive: may offer to install herdr remotely
@@ -166,6 +167,22 @@ cmd_stop() {
 
 state() { gh codespace view -c "$1" --json state -q .state < /dev/null 2>/dev/null || echo unknown; }
 
+# Open herdr clients back off to 2 minutes between attempts while a codespace is stopped, and nothing
+# makes them retry sooner once it's up. Warm herdr's shared ssh master with `machine status` (up to
+# 2 minutes), then disable+enable the machine: clients replace it with a fresh endpoint that connects
+# immediately through the warm master. Fails if the machine never became reachable.
+reconnect_clients() {
+  local id=$1 i ok=1
+  for (( i = 0; i < 24; i++ )); do
+    "$H" machine status "$id" < /dev/null > /dev/null 2>&1 && { ok=0; break; }
+    sleep 5
+  done
+  "$H" machine disable "$id" < /dev/null > /dev/null
+  sleep 2   # clients poll the machine catalog once a second; they must see the disable
+  "$H" machine enable "$id" < /dev/null > /dev/null
+  return $ok
+}
+
 cmd_start() {
   local name=${1:-} id="" label="" i
   [[ -n $name ]] || name=$(pick "start which codespace?") || exit 1
@@ -179,12 +196,9 @@ cmd_start() {
   [[ $(state "$name") == Available ]] || die "$name did not become available; check gh codespace list"
   IFS=$'\t' read -r id label < <(machines | machine_for "$name") || true
   if [[ -n $id ]]; then
-    echo "==> waiting for herdr machine '$label' to reconnect (up to 2 minutes)"
-    for (( i = 0; i < 30; i++ )); do
-      "$H" machine status "$id" < /dev/null > /dev/null 2>&1 && { echo "started $name; '$label' is connected"; return; }
-      sleep 5
-    done
-    echo "started $name; herdr hasn't reconnected '$label' yet, an open herdr client will within 2 minutes"
+    echo "==> reconnecting herdr machine '$label'"
+    reconnect_clients "$id" && { echo "started $name; '$label' is reachable, open herdr clients reconnect now"; return; }
+    echo "started $name; herdr can't reach '$label' yet, open clients keep retrying"
     return
   fi
   echo "started $name"

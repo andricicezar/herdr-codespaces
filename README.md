@@ -36,10 +36,12 @@ The menu has seven entries:
 - **add**: pick a codespace and register it with herdr. If the codespace is stopped, it gets started (this takes about a
   minute). herdr may ask to install itself on the codespace. Say yes. The machine is labeled with the codespace name
   minus the random suffix, so `obscure-parakeet-pv45jwpqvghrv6g` becomes `obscure-parakeet`.
-- **refresh**: the same as add. Use it to start a codespace you stopped, or after a rebuild changes its host key.
+- **refresh**: the same as add. Use it to start a codespace you stopped, after a rebuild changes its host key, or when
+  herdr is stuck on "reconnecting": for an already registered codespace it makes open herdr clients reconnect right
+  away.
 - **remove**: take a codespace out of herdr. The codespace itself isn't touched.
-- **start**: start a stopped codespace through the GitHub API, wait until it's available, then wait for an open herdr
-  client to reconnect to it.
+- **start**: start a stopped codespace through the GitHub API, wait until it's available and reachable, then make open
+  herdr clients reconnect to it right away.
 - **stop**: shut a codespace down.
 - **list**: all your codespaces, and which ones are in herdr.
 
