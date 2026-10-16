@@ -54,24 +54,28 @@ registered() {
 machines() { "$H" machine list --json < /dev/null; }
 
 codespaces() {
-  gh codespace list --json name,repository,state,gitStatus \
-    --jq '.[] | [.name,.repository,.state,.gitStatus.ref] | @tsv'
+  gh codespace list --json name,displayName,repository,state,gitStatus \
+    --jq '.[] | [.name,.displayName,.repository,.state,.gitStatus.ref] | @tsv'
 }
 
-# stdin rows -> the chosen row; fzf if available, else bash select
+# stdin rows -> the chosen row; fzf (extra args passed through) if available, else bash select
 choose() {
-  if command -v fzf > /dev/null; then fzf --delimiter='\t' --header="$1"; return; fi
+  local header=$1; shift
+  if command -v fzf > /dev/null; then fzf --delimiter='\t' --header="$header" "$@"; return; fi
   local IFS=$'\n' r rows; rows=$(cat)
-  echo "$1" >&2
+  echo "$header" >&2
   select r in $rows; do [[ -n $r ]] && { echo "$r"; return; }; done < /dev/tty
   return 1
 }
 
-pick() {
+# codespace rows -> chosen row, showing GitHub display names instead of the generated codespace names
+choose_codespace() {
   local rows; rows=$(codespaces)
   [[ -n $rows ]] || die "no codespaces (gh codespace list)"
-  choose "$1" <<<"$rows" | cut -f1
+  choose "$1" --with-nth=2.. <<<"$rows"
 }
+
+pick() { choose_codespace "$1" | cut -f1; }
 
 ask() { local a; read -rp "$1 [y/N] " a; [[ $a == [yY]* ]]; }
 
@@ -103,7 +107,8 @@ cmd_add() {
   [[ -n $name ]] || name=$(pick "add which codespace?") || exit 1
   local alias="herdr-cs.$name"
   IFS=$'\t' read -r id old_label < <(machines | machine_for "$name") || true
-  label=${label:-${old_label:-${name%-*}}}
+  label=${label:-${old_label:-$(gh codespace view -c "$name" --json displayName -q .displayName < /dev/null)}}
+  label=${label:-${name%-*}}
 
   echo "==> ssh config ($CFG)"
   mkdir -p ~/.ssh; touch "$CFG"; chmod 600 "$CFG"
@@ -141,10 +146,10 @@ cmd_add() {
 }
 
 cmd_list() {
-  local m name repo state ref
+  local m name display repo state ref
   m=$(machines)
-  while IFS=$'\t' read -r name repo state ref; do
-    printf '%-40s %-30s %-10s %-30s %s\n' "$name" "$repo" "$state" "$ref" \
+  while IFS=$'\t' read -r name display repo state ref; do
+    printf '%-25s %-40s %-30s %-10s %-30s %s\n' "$display" "$name" "$repo" "$state" "$ref" \
       "$(machine_for "$name" <<<"$m" | cut -f2)"
   done < <(codespaces)
 }
@@ -205,15 +210,13 @@ cmd_start() {
 }
 
 cmd_toggle() {
-  local rows row name repo s
-  rows=$(codespaces)
-  [[ -n $rows ]] || die "no codespaces (gh codespace list)"
-  row=$(choose "start/stop which codespace?" <<<"$rows") || exit 1
-  IFS=$'\t' read -r name repo s _ <<<"$row"
+  local row name display repo s
+  row=$(choose_codespace "start/stop which codespace?") || exit 1
+  IFS=$'\t' read -r name display repo s _ <<<"$row"
   case $s in
-    Available) echo "==> stopping $name"; cmd_stop "$name" ;;
+    Available) echo "==> stopping $display ($name)"; cmd_stop "$name" ;;
     Shutdown) cmd_start "$name" ;;
-    *) die "$name is $s; try again once it settles" ;;
+    *) die "$display is $s; try again once it settles" ;;
   esac
 }
 

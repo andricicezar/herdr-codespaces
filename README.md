@@ -34,8 +34,8 @@ The menu has seven entries:
 - **toggle**: pick a codespace (the list shows each one's state) to start it if it's stopped or stop it if it's
   running.
 - **add**: pick a codespace and register it with herdr. If the codespace is stopped, it gets started (this takes about a
-  minute). herdr may ask to install itself on the codespace. Say yes. The machine is labeled with the codespace name
-  minus the random suffix, so `obscure-parakeet-pv45jwpqvghrv6g` becomes `obscure-parakeet`.
+  minute). herdr may ask to install itself on the codespace. Say yes. The machine is labeled with the codespace's
+  display name on GitHub (the one you can rename there).
 - **refresh**: the same as add. Use it to start a codespace you stopped, after a rebuild changes its host key, or when
   herdr is stuck on "reconnecting": for an already registered codespace it makes open herdr clients reconnect right
   away.
