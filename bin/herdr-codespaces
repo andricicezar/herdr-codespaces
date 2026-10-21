@@ -84,11 +84,18 @@ link_herdr() {
 }
 
 # herdr panes are non-login shells, so /etc/profile.d/codespaces.sh never runs: no GITHUB_TOKEN (git auth)
-# and no cd into the repo. (Re)write a managed block in the remote ~/.bashrc that does both.
+# and no cd into the repo; nor does ~/.profile, where installers put PATH (~/.local/bin, cargo, elan,
+# nix): tools installed there are missing. (Re)write a managed block in the remote ~/.bashrc that does
+# all three. (Not login shells instead: codespaces.sh would cd every new pane into the repo.)
 remote_bashrc() {
   ssh "$1" 'sed -i "/^# >>> herdr-codespaces/,/^# <<< herdr-codespaces/d" ~/.bashrc; cat >> ~/.bashrc' <<'SNIPPET'
 # >>> herdr-codespaces (managed by the herdr-codespaces plugin; rewritten on add/refresh)
 if [ -n "$HERDR_ENV" ]; then
+  # ~/.profile includes this file again: the guard stops it there
+  if [ -z "$HERDR_CS_PROFILE" ] && [ -r "$HOME/.profile" ]; then
+    export HERDR_CS_PROFILE=1
+    . "$HOME/.profile"
+  fi
   if [ -z "$GITHUB_TOKEN" ] && [ -r /workspaces/.codespaces/shared/.env-secrets ]; then
     while IFS= read -r line; do export "${line%%=*}=$(printf %s "${line#*=}" | base64 -d)"; done < /workspaces/.codespaces/shared/.env-secrets
   fi
