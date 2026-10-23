@@ -96,6 +96,9 @@ if [ -n "$HERDR_ENV" ]; then
     export HERDR_CS_PROFILE=1
     . "$HOME/.profile"
   fi
+  # Everything under /workspaces is world-writable: ls would draw every folder blue on green
+  # (dircolors' ow/tw), unreadable in most themes. Draw them as plain folders.
+  [ -n "$LS_COLORS" ] && export LS_COLORS="$LS_COLORS:ow=01;34:tw=01;34"
   if [ -z "$GITHUB_TOKEN" ] && [ -r /workspaces/.codespaces/shared/.env-secrets ]; then
     while IFS= read -r line; do export "${line%%=*}=$(printf %s "${line#*=}" | base64 -d)"; done < /workspaces/.codespaces/shared/.env-secrets
   fi
